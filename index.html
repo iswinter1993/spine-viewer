@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Spine 逆向数据查看器 / 导出器</title>
+<style>
+  :root{
+    --bg:#1b1a18; --panel:#26241f; --line:#3a3730; --fg:#e8e2d4;
+    --dim:#a89f8c; --acc:#d4a24c; --acc2:#7fb069; --err:#e06c5a;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);
+    font:13px/1.5 ui-sans-serif,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+  #app{display:flex;height:100%}
+  #side{width:310px;flex:none;background:var(--panel);border-right:1px solid var(--line);
+    overflow-y:auto;padding:12px}
+  #main{flex:1;display:flex;flex-direction:column;min-width:0}
+  #stage{flex:1;position:relative;background:#e8e0ce;min-height:0}
+  #gl{width:100%;height:100%;display:block}
+  #drop{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    flex-direction:column;gap:10px;color:#6b6355;text-align:center;pointer-events:none}
+  #drop.hide{display:none}
+  #drop b{font-size:16px;color:#4a4438}
+  h1{font-size:14px;margin:0 0 10px;color:var(--acc);letter-spacing:.5px}
+  h2{font-size:12px;margin:16px 0 6px;color:var(--dim);font-weight:600;
+    border-bottom:1px solid var(--line);padding-bottom:4px}
+  label{display:block;font-size:12px;color:var(--dim);margin:8px 0 3px}
+  select,input[type=text],input[type=number]{width:100%;background:#1b1a18;color:var(--fg);
+    border:1px solid var(--line);border-radius:4px;padding:5px 6px;font:inherit}
+  select:focus,input:focus{outline:1px solid var(--acc);border-color:var(--acc)}
+  input[type=range]{width:100%;accent-color:var(--acc)}
+  button{background:#332f28;color:var(--fg);border:1px solid var(--line);border-radius:4px;
+    padding:6px 10px;font:inherit;cursor:pointer;width:100%;margin-top:6px}
+  button:hover{background:#3d382f;border-color:var(--acc)}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  button.pri{background:var(--acc);color:#241d0d;border-color:var(--acc);font-weight:600}
+  button.pri:hover{background:#e0b160}
+  .row{display:flex;gap:6px}
+  .row>*{flex:1;min-width:0}
+  .chk{display:flex;align-items:center;gap:6px;margin:6px 0;font-size:12px;color:var(--fg)}
+  .chk input{width:auto;accent-color:var(--acc)}
+  #info{font:11px/1.6 ui-monospace,Menlo,monospace;color:var(--dim);
+    white-space:pre-wrap;word-break:break-all;background:#1b1a18;border:1px solid var(--line);
+    border-radius:4px;padding:7px;margin-top:6px;max-height:190px;overflow:auto}
+  #log{font:11px/1.5 ui-monospace,Menlo,monospace;color:var(--dim);max-height:110px;
+    overflow:auto;margin-top:6px;white-space:pre-wrap;word-break:break-all}
+  #log .e{color:var(--err)} #log .ok{color:var(--acc2)}
+  #skinlist{max-height:168px;overflow-y:auto;background:#1b1a18;border:1px solid var(--line);
+    border-radius:4px;padding:4px}
+  .skinrow{display:flex;align-items:center;gap:6px;margin:0;padding:2px 3px;font-size:12px;
+    color:var(--fg);cursor:pointer;border-radius:3px}
+  .skinrow:hover{background:#332f28}
+  .skinrow input{width:auto;accent-color:var(--acc);flex:none}
+  .skinrow span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .skinrow em{color:var(--dim);font-style:normal;font-size:11px;flex:none}
+  .badge{display:inline-block;background:#332f28;border:1px solid var(--line);border-radius:3px;
+    padding:1px 5px;font-size:11px;color:var(--dim);margin-right:4px}
+  .badge.warn{color:var(--err);border-color:var(--err)}
+  .badge.good{color:var(--acc2);border-color:var(--acc2)}
+  #bar{height:34px;flex:none;background:var(--panel);border-top:1px solid var(--line);
+    display:flex;align-items:center;gap:10px;padding:0 12px}
+  #bar .sp{flex:1;min-width:60px}
+  #t{font:12px ui-monospace,monospace;color:var(--dim);min-width:96px;text-align:right}
+  .hint{font-size:11px;color:#7d7565;margin-top:4px;line-height:1.45}
+  details{margin-top:8px} summary{cursor:pointer;font-size:12px;color:var(--dim)}
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="side">
+    <h1>Spine 逆向数据查看器</h1>
+
+    <h2>1. 载入数据</h2>
+    <input type="file" id="folder" webkitdirectory directory multiple style="display:none">
+    <button class="pri" id="pick">选择角色文件夹…</button>
+    <div class="hint">选 <code>spine_out/&lt;角色&gt;/</code> 这种目录，里面要有同名的
+      <code>.json</code> / <code>.atlas</code> / <code>.png</code>。也可把文件拖到右侧。</div>
+
+    <h2>2. 人物 / 动画</h2>
+    <label>skin（可多选组合，用于「随机弟子」部件库）</label>
+    <div id="skinlist"></div>
+    <div class="row">
+      <button id="rand">🎲 随机</button>
+      <button id="clr">清空</button>
+    </div>
+    <div class="hint" id="skinhint"></div>
+    <label>动画</label>
+    <select id="anim"></select>
+    <label>播放速度 <span id="speedv">1.00×</span></label>
+    <input type="range" id="speed" min="0" max="3" step="0.05" value="1">
+    <div class="chk"><input type="checkbox" id="loop" checked><label for="loop" style="margin:0">循环</label></div>
+    <div class="chk"><input type="checkbox" id="bones"><label for="bones" style="margin:0">显示骨骼</label></div>
+    <div class="chk"><input type="checkbox" id="alpha" checked><label for="alpha" style="margin:0">预乘 alpha（消除灰边，推荐）</label></div>
+    <div class="hint">图集里全透明像素的 RGB 是纯黑。若不做预乘，线性过滤会把 RGB 和 A 分开插值，
+      边缘出现一圈灰线（区域被放大 10~17 倍时特别明显，如嘴部）。</div>
+
+    <h2>3. 视图</h2>
+    <label>背景色</label>
+    <input type="color" id="bg" value="#e8e0ce" style="width:100%;height:28px;background:none;border:1px solid var(--line);border-radius:4px">
+    <label>取景模式</label>
+    <select id="fitmode">
+      <option value="all">整段动画（并集，动作全部可见）</option>
+      <option value="current">当前帧（会位移的动作推荐）</option>
+    </select>
+    <div class="chk"><input type="checkbox" id="autofit" checked><label for="autofit" style="margin:0">每帧自动套用取景</label></div>
+    <div class="row">
+      <button id="fit">重新取景</button>
+      <button id="reset">复位</button>
+    </div>
+
+    <h2>4. 导出</h2>
+    <label>导出尺寸（帧宽 = 帧高）</label>
+    <input type="number" id="exsize" value="256" min="32" max="2048" step="16">
+    <label>采样帧数</label>
+    <input type="number" id="exframes" value="24" min="2" max="240" step="1">
+    <label>帧率（用于 manifest 的时间戳）</label>
+    <input type="number" id="exfps" value="24" min="1" max="120" step="1">
+    <button class="pri" id="exsheet">导出精灵图集 + JSON</button>
+    <button id="exseq">导出序列帧 PNG（zip）</button>
+    <label>文件名</label>
+    <input type="text" id="exname" value="character">
+    <button id="expng">导出当前帧 PNG</button>
+    <button id="exdata">导出清洗后的 Spine 三件套</button>
+    <button class="pri" id="exall">批量导出全部 skin（zip）</button>
+    <div class="hint">把该骨架里每一个 skin 都导出一套精灵图集 + JSON —— 适合「随机弟子」部件库。</div>
+
+    <h2>5. 随机弟子（一键生成）</h2>
+    <label>生成数量</label>
+    <input type="number" id="rdcount" value="8" min="1" max="500" step="1">
+    <div class="chk"><input type="checkbox" id="rdanim" checked><label for="rdanim" style="margin:0">每个弟子随机动画</label></div>
+    <div class="chk"><input type="checkbox" id="rdcombo"><label for="rdcombo" style="margin:0">允许组合多个 skin（实验性）</label></div>
+    <button class="pri" id="rdone">🎲 一键生成一个（预览）</button>
+    <button class="pri" id="rdbatch">🎲 批量生成并导出 zip</button>
+    <div class="hint" id="rdhint">随机挑 skin（可组合）→ 取景 → 导出精灵图集。
+      尺寸/帧数用上面「4. 导出」里的设置。</div>
+
+    <h2>6. 数据信息</h2>
+    <div id="info">（未载入）</div>
+    <div id="log"></div>
+  </aside>
+
+  <div id="main">
+    <div id="stage">
+      <canvas id="gl"></canvas>
+      <div id="drop">
+        <b>把角色文件夹拖到这里</b>
+        <div>或点左侧「选择角色文件夹」</div>
+      </div>
+    </div>
+    <div id="bar">
+      <button id="play" style="width:auto;margin:0">⏸ 暂停</button>
+      <input type="range" id="scrub" min="0" max="1000" value="0" style="flex:0 0 260px">
+      <span id="t">0.000 / 0.000</span>
+      <span class="sp"></span>
+      <span id="status" class="badge">未载入</span>
+    </div>
+  </div>
+</div>
+
+<script src="spine-webgl.js"></script>
+<script>
+"use strict";
+/* ============================================================ 工具函数 */
+const $ = id => document.getElementById(id);
+const log = (m, cls) => {
+  const d = document.createElement('div');
+  if (cls) d.className = cls;
+  d.textContent = m;
+  $('log').appendChild(d); $('log').scrollTop = 1e9;
+};
+const fmt = (n, p = 2) => Number(n).toFixed(p);
+
+/* ============================================================ 全局状态 */
+const S = {
+  gl: null, renderer: null, skeleton: null, state: null, data: null,
+  atlas: null, textures: {}, texDims: {}, images: {}, files: {}, off: null, animName: '', skinName: '',
+  duration: 0, playing: true, speed: 1, time: 0, lastT: 0,
+  view: { x: 0, y: 0, w: 800, h: 600 },
+};
+
+/* ============================================================ WebGL 初始化 */
+function initGL() {
+  const canvas = $('gl');
+  // alpha:true 才能让导出帧带透明背景；premultipliedAlpha:false 匹配直通 alpha 的 PNG
+  const opts = { alpha: true, premultipliedAlpha: true, preserveDrawingBuffer: true, antialias: true };
+  const gl = canvas.getContext('webgl', opts) || canvas.getContext('experimental-webgl', opts);
+  if (!gl) { log('浏览器不支持 WebGL', 'e'); return false; }
+  S.gl = gl;
+  S.renderer = new spine.webgl.SceneRenderer(canvas, gl, false);
+  resizeCanvas();
+  window.addEventListener('resize', () => { resizeCanvas(); if (S.skeleton) autoFit(); });
+  return true;
+}
+function resizeCanvas() {
+  const c = $('gl'), stage = $('stage');
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  c.width = Math.max(1, Math.floor(stage.clientWidth * dpr));
+  c.height = Math.max(1, Math.floor(stage.clientHeight * dpr));
+  S.renderer.camera.setViewport(c.width, c.height);
+}
+
+/* ============================================================ 载入 */
+async function readFiles(fileList) {
+  const files = Array.from(fileList);
+  const byExt = { json: [], atlas: [], png: [] };
+  for (const f of files) {
+    const n = f.name.toLowerCase();
+    if (n.endsWith('.json')) byExt.json.push(f);
+    else if (n.endsWith('.atlas')) byExt.atlas.push(f);
+    else if (n.endsWith('.png')) byExt.png.push(f);
+  }
+  if (!byExt.json.length || !byExt.atlas.length || !byExt.png.length) {
+    throw new Error(`缺少文件：json×${byExt.json.length} atlas×${byExt.atlas.length} png×${byExt.png.length}`);
+  }
+  // 挑出真正的骨架 JSON（有 bones/skins/animations），排除 manifest 之类
+  let skelJsonFile = null, skelObj = null;
+  for (const f of byExt.json) {
+    try {
+      const o = JSON.parse(await f.text());
+      if (o && (o.bones || o.skins)) { skelJsonFile = f; skelObj = o; break; }
+    } catch (e) { /* 不是 JSON，跳过 */ }
+  }
+  if (!skelJsonFile) throw new Error('在 .json 文件里找不到骨架数据（没有 bones/skins 字段）');
+
+  const atlasFile = byExt.atlas[0];
+  const atlasText = await atlasFile.text();
+
+  // 贴图：按 atlas 里声明的页名匹配，匹配不上就用第一张
+  const texFiles = {};
+  for (const f of byExt.png) texFiles[f.name] = f;
+
+  return { skelJsonFile, skelObj, atlasFile, atlasText, texFiles, rawJsonText: await skelJsonFile.text() };
+}
+
+async function buildFromFiles(fileList, label) {
+  try {
+    setStatus('载入中…', '');
+    const R = await readFiles(fileList);
+    S.files = R;
+
+    // --- 贴图
+    for (const t of Object.values(S.textures)) { /* 旧贴图由 GC 处理 */ }
+    S.textures = {};
+    const pages = parseAtlasPages(R.atlasText);
+    log(`图集页: ${pages.map(p => p.name).join(', ') || '(未解析到)'}`);
+    const entries = Object.entries(R.texFiles);
+    for (const pg of (pages.length ? pages : [{ name: entries[0]?.[0] || 'page.png' }])) {
+      const f = R.texFiles[pg.name] || R.texFiles[basename(pg.name)] || entries[0]?.[1];
+      if (!f) throw new Error(`找不到图集页贴图: ${pg.name}`);
+      const img = await loadImage(f);
+      S.images[pg.name] = img;
+      S.textures[pg.name] = new spine.webgl.GLTexture(S.gl, makeUploadSource(img));
+      S.texDims[pg.name] = img.width + 'x' + img.height;
+      S.textures[basename(pg.name)] = S.textures[pg.name];
+      log(`贴图 ${f.name} → ${img.width}×${img.height}`, 'ok');
+    }
+
+    // --- 图集
+    const firstTex = Object.values(S.textures)[0];
+    S.atlas = new spine.TextureAtlas(R.atlasText, path => S.textures[path] || S.textures[basename(path)] || firstTex);
+    S.atlasFileText = R.atlasText;
+
+    // --- 骨架
+    const json = new spine.SkeletonJson(new spine.AtlasAttachmentLoader(S.atlas));
+    S.data = json.readSkeletonData(R.skelObj);
+    log(`骨架载入成功: bones=${S.data.bones.length} slots=${S.data.slots.length} skins=${S.data.skins.length} anims=${S.data.animations.length}`, 'ok');
+
+    S.skeleton = new spine.Skeleton(S.data);
+    const sd = new spine.AnimationStateData(S.data);
+    sd.defaultMix = 0;
+    S.state = new spine.AnimationState(sd);
+
+    fillSkins();
+    fillAnims();
+    $('drop').classList.add('hide');
+    setStatus(label || '已载入', 'good');
+    // skin 已在 fillSkins()/rebuildSkin() 里选好，这里只处理动画
+    selectAnim($('anim').value || S.animName);
+    autoFit(true);
+    $('exname').value = (label || 'character').replace(/[^\w.-]+/g, '_');
+  } catch (e) {
+    console.error(e);
+    setStatus('载入失败', 'warn');
+    log('载入失败: ' + e.message, 'e');
+  }
+}
+
+function basename(p) { return String(p).replace(/^.*[\\/]/, ''); }
+
+/* 图集里全透明像素的 RGB 是 (0,0,0)。线性过滤会对 RGB 和 A **分别插值**，
+   于是不透明像素与透明黑之间插出来的半透明像素 RGB 被拉暗，
+   直通 alpha 混合后边缘出现一圈灰线（区域被放大 10~17 倍时非常明显）。
+   先把 RGB 乘以 A 做预乘，配合 premultipliedAlpha=true 混合即可消除。 */
+function premultiplyImage(img) {
+  const c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0);
+  const id = ctx.getImageData(0, 0, c.width, c.height), p = id.data;
+  for (let i = 0; i < p.length; i += 4) {
+    const a = p[i + 3];
+    if (a === 255) continue;
+    if (a === 0) { p[i] = p[i + 1] = p[i + 2] = 0; continue; }
+    p[i]     = (p[i]     * a + 127) / 255 | 0;
+    p[i + 1] = (p[i + 1] * a + 127) / 255 | 0;
+    p[i + 2] = (p[i + 2] * a + 127) / 255 | 0;
+  }
+  ctx.putImageData(id, 0, 0);
+  return c;
+}
+function makeUploadSource(img) {
+  const on = $('alpha') ? $('alpha').checked : true;
+  if (!on) return img;
+  try { return premultiplyImage(img); } catch (e) { log('预乘失败，回退直通: ' + e.message, 'e'); return img; }
+}
+function rebuildTextures() {
+  if (!S.images) return;
+  for (const [k, img] of Object.entries(S.images)) {
+    if (!img) continue;
+    const t = new spine.webgl.GLTexture(S.gl, makeUploadSource(img));
+    S.textures[k] = t;
+    S.textures[basename(k)] = t;
+  }
+  log('贴图已重建（预乘 alpha = ' + ($('alpha') && $('alpha').checked) + '）', 'ok');
+}
+function parseAtlasPages(text) {
+  const out = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const s = raw.trim();
+    if (s && /\.png$/i.test(s) && !/^\s/.test(raw)) out.push({ name: s });
+  }
+  return out;
+}
+function loadImage(file) {
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); res(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('图片解码失败: ' + file.name)); };
+    img.src = url;
+  });
+}
+
+/* ============================================================ 填充下拉 */
+function fillSkins() {
+  const box = $('skinlist'); box.innerHTML = '';
+  S.skinSel = new Set();
+  const ranked = S.data.skins.slice().sort((a, b) =>
+    Object.keys(b.attachments || {}).length - Object.keys(a.attachments || {}).length);
+  for (const sk of S.data.skins) {
+    const n = Object.keys(sk.attachments || {}).length;
+    const row = document.createElement('label');
+    row.className = 'skinrow';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.value = sk.name; cb.dataset.n = n;
+    cb.onchange = () => {
+      if (cb.checked) S.skinSel.add(sk.name); else S.skinSel.delete(sk.name);
+      rebuildSkin();
+    };
+    const sp = document.createElement('span');
+    sp.textContent = sk.name;
+    const em = document.createElement('em');
+    em.textContent = n ? n + ' 槽' : '空';
+    row.appendChild(cb); row.appendChild(sp); row.appendChild(em);
+    box.appendChild(row);
+  }
+  // 默认选**部件最多**的 skin —— default 往往是特效 skin（可能 0 部件），不能当默认
+  if (ranked.length) {
+    S.skinSel.add(ranked[0].name);
+    const cb = box.querySelector(`input[value="${CSS.escape(ranked[0].name)}"]`);
+    if (cb) cb.checked = true;
+  }
+  rebuildSkin();
+}
+
+/* 用官方 Skin.addSkin 组合多个 skin —— 这正是「随机弟子」部件库的用法 */
+function rebuildSkin() {
+  if (!S.data || !S.skeleton) return;
+  const chosen = S.data.skins.filter(s => S.skinSel && S.skinSel.has(s.name));
+  let skin;
+  if (chosen.length === 0) { skin = S.data.skins[0]; if (skin) S.skinSel.add(skin.name); }
+  else if (chosen.length === 1) skin = chosen[0];
+  else {
+    skin = new spine.Skin('composed');
+    for (const s of chosen) skin.addSkin(s);   // 后加的覆盖先加的
+  }
+  if (!skin) return;
+  S.composedSkin = skin;
+  S.skinName = chosen.length ? chosen.map(s => s.name).join('+') : skin.name;
+  S.skeleton.setSkin(skin);
+  S.skeleton.setSlotsToSetupPose();
+  S.skeleton.setToSetupPose();
+  if (S.state) S.state.apply(S.skeleton);
+  updateSkinHint();
+}
+function clearSkins() {
+  if (!S.data) return;
+  S.skinSel.clear();
+  document.querySelectorAll('#skinlist input').forEach(cb => cb.checked = false);
+  rebuildSkin();
+}
+function randomSkin() {
+  if (!S.data || S.data.skins.length < 1) return;
+  // 只为有部件的 skin 随机，数量 1~2 个
+  const pool = S.data.skins.filter(s => Object.keys(s.attachments || {}).length > 0);
+  if (!pool.length) return;
+  const k = pool.length > 1 && Math.random() < 0.35 ? 2 : 1;
+  const pick = [];
+  while (pick.length < k) {
+    const s = pool[Math.floor(Math.random() * pool.length)];
+    if (!pick.includes(s)) pick.push(s);
+  }
+  S.skinSel = new Set(pick.map(s => s.name));
+  document.querySelectorAll('#skinlist input').forEach(cb => { cb.checked = S.skinSel.has(cb.value); });
+  rebuildSkin();
+  autoFit();
+}
+function updateSkinHint() {
+  const n = S.data ? S.data.skins.length : 0;
+  const k = S.skinSel ? S.skinSel.size : 0;
+  let slots = 0;
+  if (S.skeleton) for (const sl of S.skeleton.slots) if (sl.getAttachment()) slots++;
+  $('skinhint').innerHTML = n > 1
+    ? `共 <b>${n}</b> 个 skin，已选 <b>${k}</b> 个 → 当前渲染 <b>${slots}</b> 个部件。
+       ${k > 1 ? '组合模式：后选的覆盖先选的，可能叠在彼此上面。' : '单选用一个完整外观。'}`
+    : `单 skin 资产。当前 ${slots} 个部件。`;
+}
+function fillAnims() {
+  const sel = $('anim'); sel.innerHTML = '';
+  for (const a of S.data.animations) {
+    const o = document.createElement('option');
+    o.value = a.name;
+    o.textContent = `${a.name}  (${fmt(a.duration)}s)`;
+    o.dataset.d = a.duration;
+    sel.appendChild(o);
+  }
+  if (S.data.animations.length) sel.value = S.data.animations[0].name;
+}
+
+/* ============================================================ 选择 */
+function selectSkin(name) {
+  if (!S.data) return;
+  const box = $('skinlist'); if (!box) return;
+  S.skinSel = new Set([name]);
+  box.querySelectorAll('input').forEach(cb => { cb.checked = (cb.value === name); });
+  rebuildSkin();
+}
+function selectAnim(name) {
+  if (!S.data) return;
+  const a = S.data.animations.find(x => x.name === name) || S.data.animations[0];
+  if (!a) return;
+  S.animName = a.name; S.duration = a.duration;
+  S.state.setAnimation(0, a.name, $('loop').checked);
+  S.time = 0;
+  updateInfo();
+}
+function updateInfo() {
+  if (!S.data) return;
+  const d = S.data;
+  const sk = d.skins.find(s => s.name === S.skinName);
+  const nAtt = sk ? Object.keys(sk.attachments || {}).length : 0;
+  const anims = d.animations.map(a => `${a.name}(${fmt(a.duration)}s)`).join(', ');
+  const pages = parseAtlasPages(S.atlasFileText || '').map(p => p.name).join(', ');
+  $('info').textContent =
+`文件      ${S.files.skelJsonFile ? S.files.skelJsonFile.name : '-'}
+骨架版本  ${d.version || '(未知)'}     hash ${(d.hash || '').slice(0, 12) || '-'}
+尺寸      ${fmt(d.width)} × ${fmt(d.height)}
+骨骼      ${d.bones.length}
+插槽      ${d.slots.length}
+skin      ${d.skins.length}
+附件(当前) ${nAtt}
+动画      ${d.animations.length}
+图集区域  ${S.atlas.regions.length}
+图集页    ${pages || '(单页)'}
+动画列表  ${anims}`;
+}
+function setStatus(t, cls) {
+  const b = $('status'); b.textContent = t; b.className = 'badge' + (cls ? ' ' + cls : '');
+}
+
+/* ============================================================ 取景 */
+/* 组合 skin 的构造：单个直接用，多个用官方 Skin.addSkin 叠加 */
+function makeSkin(names) {
+  const list = (names || []).map(n => S.data.skins.find(s => s.name === n)).filter(Boolean);
+  if (list.length === 0) return S.data.skins[0];
+  if (list.length === 1) return list[0];
+  const c = new spine.Skin('composed');
+  for (const s of list) c.addSkin(s);
+  return c;
+}
+function pickSkinFor(nameOrList) {
+  if (Array.isArray(nameOrList)) return makeSkin(nameOrList);
+  if (nameOrList && nameOrList.includes('+')) return makeSkin(nameOrList.split('+'));
+  return S.data.skins.find(s => s.name === nameOrList) || S.data.skins[0];
+}
+
+/* 注意：这个 bundle 里的 spine.SkeletonBounds 是坏的（polygons 恒为 0），
+   所以自己用官方 attachment.computeWorldVertices 手算包围盒。
+   3.8 的签名是 computeWorldVertices(slot, start, count, out, offset, stride)。 */
+/* 包围盒。fixedTime 给定时只算那一帧（适合会位移的 walk/run），
+   否则在整段动画上采样取并集（适合原地动作）。
+   ⚠️ 动画状态只能 setAnimation 一次 —— 每次循环都调会把时间重置回 0，
+      结果"整段动画的包围盒"其实只算了一个姿势，画面就会看不全。 */
+/* 取一个附件的世界坐标顶点（扁平 Float32Array：[x0,y0,x1,y1,...]）。
+   ⚠️ spine-webgl 3.8.75 里两种附件的签名**不一样**，搞错就会算错包围盒：
+     RegionAttachment.computeWorldVertices(bone, out, offset, stride)   ← 收 bone，没有 count
+     VertexAttachment.computeWorldVertices(slot, start, count, out, offset, stride)
+       内部是 count = offset + (count >> 1) * stride，
+       所以 count 必须传**浮点数个数**（worldVerticesLength）；
+       传顶点数只会填一半数组、后半段留 0 —— 于是包围盒永远从 y=0 起算，
+       抬到空中的角色（如 feijian_idle）就会被算成"整屏里只有一丁点"。 */
+function attachmentWorldVerts(at, slot) {
+  try {
+    if (at instanceof spine.RegionAttachment) {
+      const v = new Float32Array(8);
+      at.computeWorldVertices(slot.bone, v, 0, 2);
+      return v;
+    }
+    const n = at.worldVerticesLength | 0;       // 浮点数个数，不是顶点数
+    if (!n) return null;
+    const v = new Float32Array(n);
+    at.computeWorldVertices(slot, 0, n, v, 0, 2);
+    return v;
+  } catch (e) {
+    return null;
+  }
+}
+
+function computeBounds(animName, skinName, samples, fixedTime) {
+  const sk = new spine.Skeleton(S.data);
+  sk.setSkin(typeof skinName === 'object' && skinName ? skinName : pickSkinFor(skinName));
+  sk.setSlotsToSetupPose(); sk.setToSetupPose();
+  const st = new spine.AnimationState(new spine.AnimationStateData(S.data));
+  const a = S.data.animations.find(x => x.name === animName) || S.data.animations[0];
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const useFixed = (fixedTime !== undefined && fixedTime !== null);
+  const N = useFixed ? 0 : Math.max(1, samples | 0);
+  const dt = N > 0 ? S.duration / N : 0;
+  if (a) st.setAnimation(0, a.name, false);      // ← 只设一次
+  for (let i = 0; i <= N; i++) {
+    if (useFixed) { if (fixedTime > 0) st.update(fixedTime); }
+    else if (i) st.update(dt);
+    st.apply(sk); sk.updateWorldTransform();
+    for (const sl of sk.slots) {
+      const at = sl.getAttachment(); if (!at) continue;
+      const v = attachmentWorldVerts(at, sl);
+      if (!v) continue;
+      for (let k = 0; k < v.length; k += 2) {
+        if (v[k] < x0) x0 = v[k]; if (v[k] > x1) x1 = v[k];
+        if (v[k + 1] < y0) y0 = v[k + 1]; if (v[k + 1] > y1) y1 = v[k + 1];
+      }
+    }
+  }
+  return { x0, y0, x1, y1 };
+}
+
+function setViewFromBounds(b) {
+  if (!b || !isFinite(b.x0) || !isFinite(b.x1) || b.x1 <= b.x0 || b.y1 <= b.y0) {
+    S.view = { x: 0, y: 0, w: 400, h: 400 };
+    return false;
+  }
+  S.view = { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2, w: b.x1 - b.x0, h: b.y1 - b.y0 };
+  return true;
+}
+
+function autoFit(opts) {
+  if (!S.skeleton || !S.data) return;
+  const keepLook = opts && opts.keepLook;    // 保留手动平移/缩放
+  const t = (opts && opts.time !== undefined) ? opts.time : (S.playing ? S.time : S.time);
+  try {
+    const mode = $('fitmode') ? $('fitmode').value : 'all';
+    const b = (mode === 'current')
+      ? computeBounds(S.animName, S.composedSkin || S.skinName, 0, t)
+      : computeBounds(S.animName, S.composedSkin || S.skinName, 32);
+    if (setViewFromBounds(b)) {
+      log(`取景(${mode === 'current' ? '当前帧' : '整段动画'}): 中心(${fmt(S.view.x, 1)}, ${fmt(S.view.y, 1)})  范围 ${fmt(S.view.w, 0)}×${fmt(S.view.h, 0)}`);
+    } else {
+      log('包围盒为空，用默认视图', 'e');
+    }
+  } catch (e) {
+    log('自动取景失败，用默认视图: ' + e.message, 'e');
+    S.view = { x: 0, y: 0, w: 400, h: 400 };
+  }
+  if (!keepLook) { S.panX = 0; S.panY = 0; S.zoom = 1; }
+  applyView(true);
+}
+
+function applyView(withPad) {
+  const cam = S.renderer.camera, c = $('gl');
+  const pad = (withPad ? 1.22 : 1.0) * (S.zoom || 1);
+  const vw = S.view.w * pad, vh = S.view.h * pad;
+  const aspect = c.width / Math.max(1, c.height);
+  let w = vw, h = vh;
+  if (w / h < aspect) w = h * aspect; else h = w / aspect;
+  cam.viewportWidth = w; cam.viewportHeight = h;
+  cam.position.x = S.view.x + (S.panX || 0);
+  cam.position.y = S.view.y + (S.panY || 0);
+}
+
+/* ============================================================ 渲染循环 */
+function frame() {
+  if (S.exporting) { requestAnimationFrame(frame); return; }
+  const now = performance.now() / 1000;
+  let dt = S.lastT ? now - S.lastT : 0; S.lastT = now;
+  if (dt > 0.1) dt = 0.1;
+  if (S.skeleton) {
+    if (S.playing) {
+      S.state.update(dt * S.speed);
+      S.time += dt * S.speed;
+      if (S.duration > 0 && $('loop').checked) S.time %= S.duration;
+      else S.time = Math.min(S.time, S.duration);
+    }
+    if (!S.playing) { S.state.update(0); }
+    S.state.apply(S.skeleton);
+    S.skeleton.updateWorldTransform();
+    if ($('autofit').checked) applyView(true);
+
+    const gl = S.gl, c = $('gl');
+    const bg = hexToRgb($('bg').value);
+    gl.viewport(0, 0, c.width, c.height);
+    gl.clearColor(bg[0], bg[1], bg[2], 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    S.renderer.begin();
+    S.renderer.drawSkeleton(S.skeleton, $('alpha').checked);
+    if ($('bones').checked) S.renderer.drawSkeletonDebug(S.skeleton, $('alpha').checked, []);
+
+    // 时间轴同步
+    const d = S.duration || 1;
+    if (S.playing) $('scrub').value = Math.round((S.time % d) / d * 1000);
+    $('t').textContent = `${fmt((S.playing ? S.time % d : S.time), 3)} / ${fmt(d, 3)}`;
+  }
+  requestAnimationFrame(frame);
+}
+function hexToRgb(h) {
+  h = h.replace('#', '');
+  return [parseInt(h.slice(0, 2), 16) / 255, parseInt(h.slice(2, 4), 16) / 255, parseInt(h.slice(4, 6), 16) / 255];
+}
+
+/* ============================================================ 导出用的逐帧渲染
+   直接用**主画布**渲染再拷进 2D 画布。
+   之前用第二个 WebGL 上下文渲染，对某些资源（如 girl）会得到全空白画面，
+   主画布则稳定可用 —— 这是实测结论，不是猜的。 */
+function renderFrameInto(ctx2d, dx, dy, t, w, h) {
+  const c = $('gl'), gl = S.gl, renderer = S.renderer;
+  const oldW = c.width, oldH = c.height;
+  c.width = w; c.height = h;                 // 改尺寸会重置 GL 状态
+
+  const cam = renderer.camera;
+  const asp = w / h;
+  let vw = S.view.w * 1.22, vh = S.view.h * 1.22;
+  if (vw / vh < asp) vw = vh * asp; else vh = vw / asp;
+  cam.viewportWidth = vw; cam.viewportHeight = vh;
+  cam.position.x = S.view.x; cam.position.y = S.view.y;
+
+  const sk = new spine.Skeleton(S.data);
+  sk.setSkin(S.composedSkin || S.data.skins[0]);
+  sk.setSlotsToSetupPose(); sk.setToSetupPose();
+  const st = new spine.AnimationState(new spine.AnimationStateData(S.data));
+  const a = S.data.animations.find(x => x.name === S.animName) || S.data.animations[0];
+  if (a) {
+    st.setAnimation(0, a.name, false);
+    st.update(0);
+    if (t > 0) st.update(t);
+    st.apply(sk);
+  }
+  sk.updateWorldTransform();
+
+  gl.viewport(0, 0, w, h);
+  gl.clearColor(0, 0, 0, 0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  renderer.begin();
+  renderer.drawSkeleton(sk, false);          // 我们的 PNG 是直通 alpha
+  if (ctx2d) ctx2d.drawImage(c, dx, dy);     // 必须在恢复尺寸之前拷走
+  c.width = oldW; c.height = oldH;
+}
+
+/* ============================================================ 导出：zip（store） */
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC_T[(c ^ u8[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function zipStore(entries) { // [{name, data:Uint8Array}]
+  const enc = new TextEncoder();
+  const chunks = [], central = [];
+  let off = 0;
+  const u16 = n => [n & 255, (n >> 8) & 255];
+  const u32 = n => [n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >>> 24) & 255];
+  for (const e of entries) {
+    const nm = enc.encode(e.name), d = e.data, crc = crc32(d);
+    const lh = [...u32(0x04034b50), ...u16(20), ...u16(0), ...u16(0), ...u16(0), ...u16(0),
+      ...u32(crc), ...u32(d.length), ...u32(d.length), ...u16(nm.length), ...u16(0)];
+    const head = new Uint8Array(lh); chunks.push(head, nm, d);
+    central.push({ nm, crc, len: d.length, off });
+    off += head.length + nm.length + d.length;
+  }
+  const cparts = [];
+  for (const c of central) {
+    const ch = new Uint8Array([...u32(0x02014b50), ...u16(20), ...u16(20), ...u16(0), ...u16(0),
+      ...u16(0), ...u16(0), ...u32(c.crc), ...u32(c.len), ...u32(c.len),
+      ...u16(c.nm.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(c.off)]);
+    cparts.push(ch, c.nm);
+  }
+  const csize = cparts.reduce((a, b) => a + b.length, 0);
+  const eocd = new Uint8Array([...u32(0x06054b50), ...u16(0), ...u16(0),
+    ...u16(central.length), ...u16(central.length), ...u32(csize), ...u32(off), ...u16(0)]);
+  return new Blob([...chunks, ...cparts, eocd], { type: 'application/zip' });
+}
+function download(blob, name) {
+  const a = document.createElement('a'), url = URL.createObjectURL(blob);
+  a.href = url; a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+function canvasToBlob(canvas) {
+  return new Promise(r => canvas.toBlob(r, 'image/png'));
+}
+function blobToU8(blob) {
+  return blob.arrayBuffer().then(b => new Uint8Array(b));
+}
+
+/* ============================================================ 导出动作 */
+async function exportSheet() {
+  if (!S.skeleton) return;
+  const size = +$('exsize').value, n = +$('exframes').value;
+  const fps = +$('exfps').value, base = $('exname').value || 'character';
+  S.exporting = true;
+  setStatus('导出中…', '');
+  log(`开始导出精灵图集：${n} 帧 @ ${size}×${size}`);
+  const cols = Math.ceil(Math.sqrt(n)), rows = Math.ceil(n / cols);
+  const sheet = document.createElement('canvas');
+  sheet.width = cols * size; sheet.height = rows * size;
+  const ctx = sheet.getContext('2d');
+  const frames = [];
+  for (let i = 0; i < n; i++) {
+    const t = n === 1 ? 0 : S.duration * i / n;
+    const cx = (i % cols) * size, cy = Math.floor(i / cols) * size;
+    renderFrameInto(ctx, cx, cy, t, size, size);
+    frames.push({ index: i, x: cx, y: cy, w: size, h: size, time: +t.toFixed(5) });
+    if (i % 6 === 0) log(`  …${i + 1}/${n}`);
+  }
+  const manifest = {
+    name: base, skin: S.skinName, animation: S.animName,
+    frameCount: n, fps, loop: $('loop').checked,
+    frameWidth: size, frameHeight: size, columns: cols, rows,
+    sheet: `${base}_${S.animName}_sheet.png`,
+    pivot: { x: 0.5, y: 0.5 },
+    duration: +S.duration.toFixed(5),
+    frames,
+  };
+  const sheetBlob = await canvasToBlob(sheet);
+  download(sheetBlob, manifest.sheet);
+  download(new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' }),
+    `${base}_${S.animName}_sheet.json`);
+  log(`精灵图集导出完成：${cols}×${rows} 格`, 'ok');
+  S.exporting = false; resizeCanvas(); setStatus('导出完成', 'good');
+}
+
+async function exportSequence() {
+  if (!S.skeleton) return;
+  const size = +$('exsize').value, n = +$('exframes').value;
+  const base = $('exname').value || 'character';
+  S.exporting = true;
+  setStatus('导出中…', '');
+  log(`开始导出序列帧：${n} 帧 @ ${size}×${size}`);
+  const entries = [];
+  for (let i = 0; i < n; i++) {
+    const t = n === 1 ? 0 : S.duration * i / n;
+    const tmp = document.createElement('canvas'); tmp.width = size; tmp.height = size;
+    renderFrameInto(tmp.getContext('2d'), 0, 0, t, size, size);
+    const blob = await canvasToBlob(tmp);
+    entries.push({ name: `${base}_${S.animName}/frame_${String(i).padStart(4, '0')}.png`, data: await blobToU8(blob) });
+    if (i % 6 === 0) log(`  …${i + 1}/${n}`);
+  }
+  entries.push({
+    name: `${base}_${S.animName}/manifest.json`,
+    data: new TextEncoder().encode(JSON.stringify({
+      name: base, skin: S.skinName, animation: S.animName, frameCount: n,
+      frameWidth: size, frameHeight: size, fps: +$('exfps').value,
+      duration: +S.duration.toFixed(5), loop: $('loop').checked,
+      frames: Array.from({ length: n }, (_, i) => ({
+        index: i, file: `frame_${String(i).padStart(4, '0')}.png`,
+        time: +(S.duration * i / n).toFixed(5),
+      })),
+    }, null, 2))
+  });
+  download(zipStore(entries), `${base}_${S.animName}_sequence.zip`);
+  log('序列帧导出完成', 'ok');
+  S.exporting = false; resizeCanvas(); setStatus('导出完成', 'good');
+}
+
+function exportCurrentPNG() {
+  if (!S.skeleton) return;
+  const size = +$('exsize').value;
+  const c = document.createElement('canvas'); c.width = size; c.height = size;
+  renderFrameInto(c.getContext('2d'), 0, 0, S.playing ? S.time % (S.duration || 1) : S.time, size, size);
+  c.toBlob(b => download(b, `${$('exname').value || 'character'}_${S.animName}_${fmt(S.time, 2)}.png`), 'image/png');
+}
+
+/* ============================ 随机弟子一键生成 ============================ */
+/* girl / dizi / nvdizi 这类骨架是「随机弟子」的部件库：
+   随机挑 skin（可组合多个）就得到一个新的弟子外观。 */
+
+/* 只把**像人物**的 skin 放进随机池。
+   部件库里有不少不是人物的 skin：default（特效）、beijian/beilou（背饰）、
+   body_*（身体零件）、wuqi/item/sashui（武器杂物）。随机到这些就会只剩一两个部件。 */
+const NON_CHARACTER = /^(default|beijian|beilou|beibao|body_|wuqi|item|sashui|rush|wakuang|shadow)/i;
+function disciplePool() {
+  if (!S.data) return [];
+  const all = S.data.skins;
+  const withN = all.map(s => ({ s, n: Object.keys(s.attachments || {}).length }));
+  let pool = withN.filter(x => x.n >= 15 && !NON_CHARACTER.test(x.s.name)).map(x => x.s);
+  if (pool.length < 2) pool = withN.filter(x => x.n >= 10 && !NON_CHARACTER.test(x.s.name)).map(x => x.s);
+  if (pool.length < 1) pool = withN.filter(x => x.n >= 8).map(x => x.s);
+  if (pool.length < 1) pool = all.filter(s => Object.keys(s.attachments || {}).length > 0);
+  return pool;
+}
+function randomDisciplePick() {
+  const pool = disciplePool();
+  if (!pool.length) return null;
+  // 组合多个 skin 默认关闭：整套 skin 本身通常就是完整外观，
+  // 而且两个角色各占各的槽位，组合后包围盒会炸开、画面缩得很小。
+  const combo = $('rdcombo') && $('rdcombo').checked;
+  const k = (combo && pool.length > 1 && Math.random() < 0.5) ? 2 : 1;
+  const pick = [];
+  let guard = 0;
+  while (pick.length < k && guard++ < 60) {
+    const s = pool[Math.floor(Math.random() * pool.length)];
+    if (!pick.includes(s)) pick.push(s);
+  }
+  return pick.length ? pick : [pool[0]];
+}
+
+function applyDisciplePick(pick) {
+  S.skinSel = new Set(pick.map(s => s.name));
+  document.querySelectorAll('#skinlist input').forEach(cb => { cb.checked = S.skinSel.has(cb.value); });
+  rebuildSkin();
+}
+
+function pickRandomAnim() {
+  const anims = S.data.animations;
+  if (!anims.length) return;
+  const a = ($('rdanim') && $('rdanim').checked)
+    ? anims[Math.floor(Math.random() * anims.length)] : anims[0];
+  $('anim').value = a.name;
+  selectAnim(a.name);
+}
+
+function oneClickDisciple() {
+  if (!S.data) return;
+  const pick = randomDisciplePick();
+  if (!pick) { log('没有带部件的 skin，无法生成', 'e'); return; }
+  applyDisciplePick(pick);
+  pickRandomAnim();
+  autoFit();
+  S.time = 0;
+  const label = pick.map(s => s.name).join(' + ');
+  if ($('rdhint')) $('rdhint').innerHTML = `当前弟子：<b>${label}</b>（动画 ${S.animName}）· 随机池 ${disciplePool().length}/${S.data.skins.length} 个 skin`;
+  log('随机弟子: ' + label + '  [' + S.animName + ']', 'ok');
+}
+
+async function batchRandomDisciples() {
+  if (!S.data) return;
+  const n = Math.max(1, Math.min(500, +$('rdcount').value | 0));
+  const size = +$('exsize').value, frames = +$('exframes').value, fps = +$('exfps').value;
+  const base = $('exname').value || 'disciple';
+  if (!confirm(`生成 ${n} 个随机弟子，每个 ${frames} 帧 @ ${size}×${size}（共 ${n * frames} 帧）。\n继续？`)) return;
+
+  const keep = new Set(S.skinSel), keepAnim = S.animName, keepDur = S.duration;
+  const cols = Math.ceil(Math.sqrt(frames)), rows = Math.ceil(frames / cols);
+  const entries = [], index = [], seen = new Set();
+  S.exporting = true; setStatus('生成中…', '');
+  log(`随机弟子批量生成：${n} 个，每个 ${frames} 帧 @ ${size}×${size}`);
+  try {
+    for (let d = 0; d < n; d++) {
+      let pick = randomDisciplePick(), key = pick.map(s => s.name).join('+'), guard = 0;
+      while (seen.has(key) && guard++ < 30) {
+        pick = randomDisciplePick(); key = pick.map(s => s.name).join('+');
+      }
+      seen.add(key);
+      applyDisciplePick(pick);
+      pickRandomAnim();
+      autoFit();
+
+      const sheet = document.createElement('canvas');
+      sheet.width = cols * size; sheet.height = rows * size;
+      const ctx = sheet.getContext('2d');
+      const fr = [];
+      for (let i = 0; i < frames; i++) {
+        const t = frames === 1 ? 0 : S.duration * i / frames;
+        const cx = (i % cols) * size, cy = Math.floor(i / cols) * size;
+        renderFrameInto(ctx, cx, cy, t, size, size);
+        fr.push({ index: i, x: cx, y: cy, w: size, h: size, time: +t.toFixed(5) });
+      }
+      const id = String(d + 1).padStart(3, '0') + '_' +
+        key.replace(/[^\w.-]+/g, '_').slice(0, 40);
+      const blob = await canvasToBlob(sheet);
+      entries.push({ name: `${id}/${id}_sheet.png`, data: await blobToU8(blob) });
+      entries.push({
+        name: `${id}/${id}.json`,
+        data: new TextEncoder().encode(JSON.stringify({
+          id, skins: pick.map(s => s.name), animation: S.animName,
+          frameCount: frames, fps, frameWidth: size, frameHeight: size,
+          columns: cols, rows, sheet: `${id}_sheet.png`,
+          pivot: { x: 0.5, y: 0.5 }, duration: +S.duration.toFixed(5), frames: fr,
+        }, null, 2))
+      });
+      index.push({ id, skins: pick.map(s => s.name), animation: S.animName, duration: +S.duration.toFixed(5) });
+      log(`  [${d + 1}/${n}] ${id}`);
+    }
+    entries.push({
+      name: 'index.json',
+      data: new TextEncoder().encode(JSON.stringify({ count: n, base, size, frames, fps, disciples: index }, null, 2))
+    });
+    download(zipStore(entries), `${base}_random_disciples_${n}.zip`);
+    log(`随机弟子生成完成：${n} 个`, 'ok');
+    setStatus('生成完成', 'good');
+  } catch (e) {
+    log('生成失败: ' + e.message, 'e'); setStatus('生成失败', 'warn');
+  } finally {
+    S.skinSel = keep; rebuildSkin();
+    S.animName = keepAnim; S.duration = keepDur;
+    S.exporting = false; resizeCanvas(); autoFit();
+  }
+}
+
+async function exportAllSkins() {
+  if (!S.data) return;
+  const size = +$('exsize').value, n = +$('exframes').value, fps = +$('exfps').value;
+  const base = $('exname').value || 'character';
+  const pool = S.data.skins.filter(s => Object.keys(s.attachments || {}).length > 0);
+  if (!pool.length) { log('没有可导出的 skin', 'e'); return; }
+  const est = pool.length * n;
+  if (!confirm(`将导出 ${pool.length} 个 skin × ${n} 帧 = ${est} 帧，尺寸 ${size}×${size}。\n可能耗时较久，继续？`)) return;
+
+  const keep = new Set(S.skinSel);
+  const keepAnim = S.animName, keepDur = S.duration;
+  S.exporting = true; setStatus('批量导出中…', '');
+  log(`批量导出：${pool.length} 个 skin，每个 ${n} 帧`);
+  const entries = [];
+  const cols = Math.ceil(Math.sqrt(n)), rows = Math.ceil(n / cols);
+  try {
+    for (let si = 0; si < pool.length; si++) {
+      const sk = pool[si];
+      S.skinSel = new Set([sk.name]); rebuildSkin();
+      S.animName = keepAnim; S.duration = keepDur;
+      autoFit();
+      const sheet = document.createElement('canvas');
+      sheet.width = cols * size; sheet.height = rows * size;
+      const ctx = sheet.getContext('2d');
+      const frames = [];
+      for (let i = 0; i < n; i++) {
+        const t = n === 1 ? 0 : S.duration * i / n;
+        const cx = (i % cols) * size, cy = Math.floor(i / cols) * size;
+        renderFrameInto(ctx, cx, cy, t, size, size);
+        frames.push({ index: i, x: cx, y: cy, w: size, h: size, time: +t.toFixed(5) });
+      }
+      const blob = await canvasToBlob(sheet);
+      entries.push({ name: `${sk.name}/${sk.name}_sheet.png`, data: await blobToU8(blob) });
+      entries.push({
+        name: `${sk.name}/${sk.name}.json`,
+        data: new TextEncoder().encode(JSON.stringify({
+          name: base, skin: sk.name, animation: S.animName, frameCount: n, fps,
+          loop: $('loop').checked, frameWidth: size, frameHeight: size,
+          columns: cols, rows, sheet: `${sk.name}_sheet.png`,
+          pivot: { x: 0.5, y: 0.5 }, duration: +S.duration.toFixed(5), frames,
+        }, null, 2))
+      });
+      log(`  [${si + 1}/${pool.length}] ${sk.name}`);
+    }
+    download(zipStore(entries), `${base}_all_skins.zip`);
+    log(`批量导出完成：${pool.length} 个 skin`, 'ok');
+    setStatus('导出完成', 'good');
+  } catch (e) {
+    log('批量导出失败: ' + e.message, 'e'); setStatus('导出失败', 'warn');
+  } finally {
+    S.skinSel = keep; rebuildSkin(); S.animName = keepAnim;
+    S.exporting = false; resizeCanvas(); autoFit();
+  }
+}
+
+function exportData() {
+  if (!S.files) return;
+  const base = $('exname').value || 'character';
+  const raw = S.files.skelObj;
+  if (raw.skeleton) raw.skeleton.images = '';
+  download(new Blob([JSON.stringify(raw)], { type: 'application/json' }), `${base}.json`);
+  download(new Blob([S.files.atlasText], { type: 'text/plain' }), `${base}.atlas`);
+  for (const [n, f] of Object.entries(S.files.texFiles)) download(f, n);
+  log('已导出清洗后的 Spine 三件套（images 字段已置空）', 'ok');
+}
+
+/* ============================================================ 事件绑定 */
+function bind() {
+  const stage = $('stage');   // 必须在下面所有用到 stage 的处理器**之前**声明
+  $('pick').onclick = () => $('folder').click();
+  $('folder').onchange = e => { if (e.target.files.length) buildFromFiles(e.target.files, folderLabel(e.target.files)); };
+  $('anim').onchange = e => { selectAnim(e.target.value); autoFit(true); };
+  $('speed').oninput = e => { S.speed = +e.target.value; $('speedv').textContent = fmt(S.speed) + '×'; };
+  $('loop').onchange = () => selectAnim($('anim').value);
+  if ($('alpha')) $('alpha').onchange = rebuildTextures;
+  $('play').onclick = () => { S.playing = !S.playing; $('play').textContent = S.playing ? '⏸ 暂停' : '▶ 播放'; };
+  $('scrub').oninput = e => {
+    S.playing = false; $('play').textContent = '▶ 播放';
+    S.time = S.duration * (+e.target.value) / 1000;
+    S.state.update(0); S.state.apply(S.skeleton);
+  };
+  if ($('rand')) $('rand').onclick = oneClickDisciple;
+  if ($('clr')) $('clr').onclick = clearSkins;
+  if ($('exall')) $('exall').onclick = exportAllSkins;
+  if ($('rdone')) $('rdone').onclick = oneClickDisciple;
+  if ($('rdbatch')) $('rdbatch').onclick = batchRandomDisciples;
+  if ($('fitmode')) $('fitmode').onchange = () => autoFit();
+  $('fit').onclick = () => { $('autofit').checked = true; autoFit(); };
+  $('reset').onclick = () => { S.panX = 0; S.panY = 0; S.zoom = 1; applyView(true); };
+
+  // 鼠标：拖拽平移 / 滚轮缩放
+  let dragging = false, lx = 0, ly = 0;
+  stage.addEventListener('mousedown', e => {
+    dragging = true; lx = e.clientX; ly = e.clientY;
+    $('autofit').checked = false; stage.style.cursor = 'grabbing';
+  });
+  window.addEventListener('mouseup', () => { dragging = false; stage.style.cursor = ''; });
+  window.addEventListener('mousemove', e => {
+    if (!dragging || !S.renderer) return;
+    const cam = S.renderer.camera, c = $('gl');
+    S.panX = (S.panX || 0) - (e.clientX - lx) * (cam.viewportWidth / c.width);
+    S.panY = (S.panY || 0) + (e.clientY - ly) * (cam.viewportHeight / c.height);
+    lx = e.clientX; ly = e.clientY;
+    if (!$('autofit').checked) applyView(true);
+  });
+  stage.addEventListener('wheel', e => {
+    e.preventDefault(); if (!S.renderer) return;
+    const z = (S.zoom || 1) * Math.pow(1.0015, e.deltaY);
+    S.zoom = Math.max(0.05, Math.min(20, z));
+    applyView(true);
+  }, { passive: false });
+  $('exsheet').onclick = exportSheet;
+  $('exseq').onclick = exportSequence;
+  $('expng').onclick = exportCurrentPNG;
+  $('exdata').onclick = exportData;
+
+  stage.addEventListener('dragover', e => { e.preventDefault(); });
+  stage.addEventListener('drop', e => {
+    e.preventDefault();
+    const items = e.dataTransfer.items;
+    if (items && items.length && items[0].webkitGetAsEntry) {
+      const out = [];
+      const walk = (entry) => new Promise(res => {
+        if (entry.isFile) entry.file(f => { out.push(f); res(); });
+        else if (entry.isDirectory) {
+          const rd = entry.createReader();
+          const all = [];
+          const next = () => rd.readEntries(es => {
+            if (!es.length) { Promise.all(all.map(walk)).then(res); return; }
+            all.push(...es); next();
+          });
+          next();
+        } else res();
+      });
+      Promise.all(Array.from(items).map(it => { const en = it.webkitGetAsEntry(); return en ? walk(en) : null; }))
+        .then(() => { if (out.length) buildFromFiles(out, out[0] && '拖入'); });
+    } else if (e.dataTransfer.files.length) {
+      buildFromFiles(e.dataTransfer.files, folderLabel(e.dataTransfer.files));
+    }
+  });
+}
+function folderLabel(files) {
+  const f = files[0];
+  if (f && f.webkitRelativePath) return f.webkitRelativePath.split('/').slice(-2, -1)[0] || f.name;
+  return f ? f.name.replace(/\.[^.]+$/, '') : 'character';
+}
+
+/* ============================================================ 自动载入（?dir=） */
+/* 例：index.html?dir=../spine_out/linqinzhu
+   只在通过 http:// 打开时可用（file:// 下浏览器禁止 fetch 本地文件），
+   那种情况请用「选择角色文件夹」。 */
+async function tryAutoLoad() {
+  const q = new URLSearchParams(location.search);
+  const dir = q.get('dir');
+  if (!dir) return;
+  const base = dir.replace(/\/+$/, '');
+  const name = base.split('/').filter(Boolean).pop();
+  try {
+    log('自动载入 ' + base + ' …');
+    const jr = await fetch(`${base}/${name}.json`);
+    if (!jr.ok) throw new Error(`${name}.json HTTP ${jr.status}`);
+    const jText = await jr.text();
+    const ar = await fetch(`${base}/${name}.atlas`);
+    if (!ar.ok) throw new Error(`${name}.atlas HTTP ${ar.status}`);
+    const at = await ar.text();
+    const pages = parseAtlasPages(at);
+    const files = [
+      new File([jText], name + '.json', { type: 'application/json' }),
+      new File([at], name + '.atlas', { type: 'text/plain' }),
+    ];
+    for (const p of pages) {
+      const pr = await fetch(`${base}/${p.name}`);
+      if (!pr.ok) throw new Error(`${p.name} HTTP ${pr.status}`);
+      files.push(new File([await pr.blob()], p.name, { type: 'image/png' }));
+    }
+    await buildFromFiles(files, name);
+    const qs = new URLSearchParams(location.search);
+    if (qs.get('skin')) {
+      const want = qs.get('skin').split('+').filter(n => S.data.skins.some(x => x.name === n));
+      if (want.length) {
+        S.skinSel = new Set(want);
+        document.querySelectorAll('#skinlist input').forEach(cb => { cb.checked = S.skinSel.has(cb.value); });
+        rebuildSkin(); autoFit();
+      }
+    }
+    if (qs.get('rand') === '1') randomSkin();
+    if (qs.get('anim') && S.data.animations.some(x => x.name === qs.get('anim'))) {
+      $('anim').value = qs.get('anim'); selectAnim(qs.get('anim')); autoFit();
+    }
+  } catch (e) {
+    log('自动载入失败: ' + e.message, 'e');
+  }
+}
+
+/* ============================================================ 启动 */
+window.addEventListener('error', e => {
+  log('JS 错误: ' + (e.message || e.error) + '  @' + (e.filename || '') + ':' + (e.lineno || 0), 'e');
+});
+window.addEventListener('unhandledrejection', e => {
+  log('Promise 未捕获: ' + (e.reason && e.reason.message ? e.reason.message : e.reason), 'e');
+});
+
+(function boot() {
+  if (!initGL()) return;
+  bind();
+  requestAnimationFrame(frame);
+  log('Spine 运行时: 官方 spine-webgl 3.8');
+  log('等待载入数据…');
+  tryAutoLoad();
+})();
+</script>
+</body>
+</html>
